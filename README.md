@@ -9,7 +9,7 @@ its output.
 Requires the Rust toolchain and a Unix-like system. The current version has been
 tested on macOS; Linux support has not yet been verified. Windows is not supported.
 
-Once published to [crates.io](https://crates.io/crates/checkrush), install with:
+Install with:
 
 ```sh
 cargo install checkrush
