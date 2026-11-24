@@ -1,7 +1,7 @@
 # checkrush
 
-A vibecoded Rust CLI command that runs tasks in parallel. On the first failure,
-it stops the other commands and reports the failed command and its output.
+A Rust CLI command that runs tasks in parallel. On the first failure, it stops
+the other commands and reports the failed command and its output.
 
 `checkrush` is useful when you or an agent repeatedly have to run the same
 independent tasks that usually succeed.
@@ -15,6 +15,10 @@ Alternatives:
 
 - [rush (Go)](https://github.com/shenwei356/rush)
 - [parallel (Ruby)](https://github.com/grosser/parallel)
+
+## AI, LLM, vibecoding, slop
+
+This command has completely been vibecoded. I don't know Rust :-). FYI.
 
 ## Quick start
 
