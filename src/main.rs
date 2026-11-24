@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 
 const TICK: Duration = Duration::from_millis(100);
 const KILL_DELAY: Duration = Duration::from_millis(500);
+const USAGE: &str = concat!(
+    "Usage: checkrush [--verbose|-v] [--no-timer] < commands.txt\n",
+    "       printf '%s\\n' 'command # name' | checkrush [options]"
+);
 
 struct Options {
     verbose: bool,
@@ -53,7 +57,7 @@ fn parse_args() -> Result<Options, String> {
             "--verbose" | "-v" => options.verbose = true,
             "--no-timer" => options.no_timer = true,
             "--help" | "-h" => {
-                println!("Usage: checkrush [--verbose|-v] [--no-timer] < commands.txt");
+                println!("{USAGE}");
                 std::process::exit(0);
             }
             _ => return Err(format!("Unknown argument: {arg}")),
@@ -117,11 +121,7 @@ fn read_output(mut stream: impl Read) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-fn start_command(
-    index: usize,
-    spec: &CommandSpec,
-    tx: mpsc::Sender<Event>,
-) -> io::Result<Child> {
+fn start_command(index: usize, spec: &CommandSpec, tx: mpsc::Sender<Event>) -> io::Result<Child> {
     let mut process = Command::new("sh")
         .args(["-c", &spec.command])
         .stdin(Stdio::null())
@@ -173,7 +173,9 @@ fn signal_running(children: &[Child], signal: i32) {
 }
 
 fn exit_code(status: ExitStatus) -> i32 {
-    status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(0))
+    status
+        .code()
+        .unwrap_or_else(|| 128 + status.signal().unwrap_or(0))
 }
 
 fn print_failure(spec: &CommandSpec, result: &CommandResult, verbose: bool) {
@@ -202,10 +204,14 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     let options = match parse_args() {
         Ok(options) => options,
         Err(error) => {
-            println!("{error}\nUsage: checkrush [--verbose|-v] [--no-timer] < commands.txt");
+            println!("{error}\n{USAGE}");
             return Ok(2);
         }
     };
+    if io::stdin().is_terminal() {
+        println!("{USAGE}");
+        return Ok(0);
+    }
     let lines = io::stdin().lock().lines().collect::<Result<Vec<_>, _>>()?;
     let specs: Vec<_> = lines.iter().filter_map(|line| parse_line(line)).collect();
     if specs.is_empty() {
@@ -335,7 +341,11 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
                     print_output(&specs[index], result);
                 }
             } else if matches!(result.status.signal(), Some(libc::SIGTERM | libc::SIGKILL)) {
-                println!("⚠️  [{}] cancelled after {}s", specs[index].name, seconds(child.started));
+                println!(
+                    "⚠️  [{}] cancelled after {}s",
+                    specs[index].name,
+                    seconds(child.started)
+                );
             }
         }
         let result = children[failing_index].result.as_ref().unwrap();
