@@ -40,6 +40,8 @@ struct Child {
     pid: i32,
     started: Instant,
     result: Option<CommandResult>,
+    exited: bool,
+    cancellation_requested: bool,
     reported: bool,
 }
 
@@ -159,15 +161,18 @@ fn start_command(index: usize, spec: &CommandSpec, tx: mpsc::Sender<Event>) -> i
         pid,
         started,
         result: None,
+        exited: false,
+        cancellation_requested: false,
         reported: false,
     })
 }
 
-fn signal_running(children: &[Child], signal: i32) {
-    for child in children.iter().filter(|child| child.result.is_none()) {
+fn signal_running(children: &mut [Child], signal: i32) {
+    for child in children.iter_mut().filter(|child| child.result.is_none()) {
         // SAFETY: Each PID identifies a process group started by this runner.
-        unsafe {
-            libc::kill(-child.pid, signal);
+        let sent = unsafe { libc::kill(-child.pid, signal) } == 0;
+        if sent && !child.exited {
+            child.cancellation_requested = true;
         }
     }
 }
@@ -235,7 +240,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
         match start_command(index, spec, tx.clone()) {
             Ok(child) => children.push(child),
             Err(error) => {
-                signal_running(&children, libc::SIGKILL);
+                signal_running(&mut children, libc::SIGKILL);
                 return Err(error.into());
             }
         }
@@ -260,23 +265,24 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
             };
             if let Some(signal) = signal {
                 interrupted_code = Some(128 + signal);
-                signal_running(&children, libc::SIGTERM);
+                signal_running(&mut children, libc::SIGTERM);
                 stopping = Some(Instant::now());
             }
         }
         if let Some(stopped_at) = stopping {
             if !forced && stopped_at.elapsed() >= KILL_DELAY {
-                signal_running(&children, libc::SIGKILL);
+                signal_running(&mut children, libc::SIGKILL);
                 forced = true;
             }
         }
 
         match rx.recv_timeout(TICK) {
             Ok(Event::Exited { index, status }) => {
+                children[index].exited = true;
                 if stopping.is_none() && !status.success() {
                     failure = Some(index);
                     failed_elapsed = seconds(start);
-                    signal_running(&children, libc::SIGTERM);
+                    signal_running(&mut children, libc::SIGTERM);
                     stopping = Some(Instant::now());
                 }
             }
@@ -304,7 +310,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
                 }
             }
             Ok(Event::WaitError(error)) => {
-                signal_running(&children, libc::SIGKILL);
+                signal_running(&mut children, libc::SIGKILL);
                 return Err(error.into());
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -340,7 +346,9 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
                 if options.verbose {
                     print_output(&specs[index], result);
                 }
-            } else if matches!(result.status.signal(), Some(libc::SIGTERM | libc::SIGKILL)) {
+            } else if child.cancellation_requested
+                || matches!(result.status.signal(), Some(libc::SIGTERM | libc::SIGKILL))
+            {
                 println!(
                     "⚠️  [{}] cancelled after {}s",
                     specs[index].name,
