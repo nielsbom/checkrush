@@ -1,0 +1,14 @@
+[package]
+name = "checkrush"
+version = "0.1.0"
+edition = "2024"
+description = "Vibecoded CLI to run shell commands in parallel, stop on the first failure, and report results."
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/nielsbom/checkrush"
+readme = "README.md"
+keywords = ["cli", "parallel", "checks", "shell"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+libc = "0.2"
+signal-hook = "0.3"
