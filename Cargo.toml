@@ -1,6 +1,6 @@
 [package]
 name = "checkrush"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Vibecoded CLI to run shell commands in parallel, stop on the first failure, and report results."
 license = "AGPL-3.0-or-later"
